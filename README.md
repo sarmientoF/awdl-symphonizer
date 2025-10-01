@@ -1,6 +1,6 @@
-# 🚀 AWDL Mac Monitor
+# 🎵 AWDL Symphonizer
 
-> **Fix macOS stuttering, ping spikes, and lag in gaming caused by Apple Wireless Direct Link (AWDL) channel interference**
+> **Get on the same frequency as AWDL. Fix macOS stuttering, ping spikes, and gaming lag by synchronizing WiFi channels.**
 
 [![macOS](https://img.shields.io/badge/macOS-10.10+-blue.svg)](https://www.apple.com/macos/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
@@ -54,7 +54,7 @@ While these features are convenient, **AWDL can severely degrade network perform
 
 ## ⚡ The Solution
 
-**AWDL Mac Monitor** automatically detects when your WiFi and AWDL are on **different channels** and alerts you with:
+**AWDL Symphonizer** automatically detects when your WiFi and AWDL are on **different channels** and alerts you with:
 
 - 🔔 **Instant popup notifications** with step-by-step fix instructions
 - 🎯 **Exact channel recommendations** for your router
@@ -175,8 +175,8 @@ cd ~/awdl-mac-monitor && ./check_awdl_channel.sh
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/tbraun96/awdl-mac-monitor.git
-cd awdl-mac-monitor
+git clone https://github.com/tbraun96/awdl-symphonizer.git
+cd awdl-symphonizer
 ```
 
 ### Step 2: Configure Passwordless Sudo (Required)
@@ -571,9 +571,9 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 🔗 Links
 
-- **GitHub Repository:** [tbraun96/awdl-mac-monitor](https://github.com/tbraun96/awdl-mac-monitor)
-- **Issues:** [Report a bug](https://github.com/tbraun96/awdl-mac-monitor/issues)
-- **Discussions:** [Ask questions](https://github.com/tbraun96/awdl-mac-monitor/discussions)
+- **GitHub Repository:** [tbraun96/awdl-symphonizer](https://github.com/tbraun96/awdl-symphonizer)
+- **Issues:** [Report a bug](https://github.com/tbraun96/awdl-symphonizer/issues)
+- **Discussions:** [Ask questions](https://github.com/tbraun96/awdl-symphonizer/discussions)
 
 ---
 
@@ -583,7 +583,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 If this tool helped you, consider ⭐ starring the repository!
 
-[Report Bug](https://github.com/tbraun96/awdl-mac-monitor/issues) • [Request Feature](https://github.com/tbraun96/awdl-mac-monitor/issues) • [Share Feedback](https://github.com/tbraun96/awdl-mac-monitor/discussions)
+[Report Bug](https://github.com/tbraun96/awdl-symphonizer/issues) • [Request Feature](https://github.com/tbraun96/awdl-symphonizer/issues) • [Share Feedback](https://github.com/tbraun96/awdl-symphonizer/discussions)
 
 </div>
 
