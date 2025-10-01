@@ -1,0 +1,120 @@
+═══════════════════════════════════════════════════════════════════
+  AWDL MAC MONITOR - Installation Instructions
+═══════════════════════════════════════════════════════════════════
+
+Everything is ready! Here's how to get started:
+
+────────────────────────────────────────────────────────────────────
+  OPTION 1: Install as Background Service (Recommended)
+────────────────────────────────────────────────────────────────────
+
+Run this command:
+
+    cd ~/awdl-mac-monitor && ./install.sh
+
+This will:
+  ✓ Install the monitor as a macOS service
+  ✓ Start monitoring automatically
+  ✓ Run at every startup
+  ✓ Show popup alerts when WiFi/AWDL channels don't match
+
+────────────────────────────────────────────────────────────────────
+  OPTION 2: Manual Checks Only (No Installation)
+────────────────────────────────────────────────────────────────────
+
+Quick check (one-time):
+
+    ~/awdl-mac-monitor/check_awdl_channel.sh
+
+Live monitoring (continuous):
+
+    ~/awdl-mac-monitor/monitor_awdl_live.sh
+
+────────────────────────────────────────────────────────────────────
+  What Happens When Installed?
+────────────────────────────────────────────────────────────────────
+
+The monitor runs silently in the background and checks your WiFi
+and AWDL channels every 30 seconds.
+
+IF CHANNELS MATCH (✓):
+  • Nothing happens - everything is optimal
+  • No popups, no notifications
+  • No lag, no stuttering
+
+IF CHANNELS DON'T MATCH (⚠):
+  • Popup alert appears with instructions
+  • Notification shows in Notification Center
+  • Alert sound plays
+  • Shows exactly which channel to set on router
+
+────────────────────────────────────────────────────────────────────
+  Example Alert Message
+────────────────────────────────────────────────────────────────────
+
+    ⚠️ AWDL CHANNEL MISMATCH DETECTED
+    
+    Your WiFi and AWDL are on different channels, which causes
+    lag spikes and stuttering in games/streaming.
+    
+    Current Status:
+    • WiFi Channel: 36 (5 GHz)
+    • AWDL Channel: 149
+    
+    Action Required:
+    Change your router's 5 GHz WiFi channel to 149 to match
+    AWDL and prevent lag spikes.
+    
+    Router Settings:
+    1. Open your router admin page
+    2. Navigate to WiFi settings
+    3. Change 5 GHz channel to 149
+    4. Save and reconnect
+    
+    [Dismiss]  [Open Router (192.168.1.1)]
+
+────────────────────────────────────────────────────────────────────
+  Service Management Commands
+────────────────────────────────────────────────────────────────────
+
+Check if running:
+    launchctl list | grep awdl-monitor
+
+View logs:
+    tail -f ~/awdl-mac-monitor/monitor.log
+
+Stop service:
+    launchctl unload ~/Library/LaunchAgents/com.nologik.awdl-monitor.plist
+
+Start service:
+    launchctl load ~/Library/LaunchAgents/com.nologik.awdl-monitor.plist
+
+Uninstall:
+    cd ~/awdl-mac-monitor && ./uninstall.sh
+
+────────────────────────────────────────────────────────────────────
+  Quick Reference
+────────────────────────────────────────────────────────────────────
+
+For 5 GHz WiFi:
+  → Set router to channel 149
+
+For 6 GHz WiFi (WiFi 6E):
+  1. Run: ~/awdl-mac-monitor/check_awdl_channel.sh
+  2. Note the AWDL channel (e.g., 37)
+  3. Set router to that channel
+
+────────────────────────────────────────────────────────────────────
+  Need More Info?
+────────────────────────────────────────────────────────────────────
+
+Read the detailed guides:
+  • README.md - Quick start and usage
+  • AWDL_OPTIMIZATION_GUIDE.md - In-depth technical details
+
+═══════════════════════════════════════════════════════════════════
+  Ready to Install?
+═══════════════════════════════════════════════════════════════════
+
+    cd ~/awdl-mac-monitor && ./install.sh
+
