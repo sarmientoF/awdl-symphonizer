@@ -25,22 +25,22 @@ trap 'echo "\n${YELLOW}Monitoring stopped.${NC}"; exit 0' INT
 
 show_notification() {
     local MESSAGE="$1"
-    
-    # Use osascript to show a native macOS notification with action button
+    local ROUTER_IP=$(route -n get default 2>/dev/null | grep gateway | awk '{print $2}')
+    ROUTER_IP=${ROUTER_IP:-"192.168.1.1"}
+
     osascript <<EOF >/dev/null 2>&1 &
 tell application "System Events"
-    display notification "$MESSAGE" with title "⚠️ AWDL Channel Mismatch Detected" subtitle "WiFi: Ch ${WIFI_CHAN_NUM} | AWDL: Ch ${AWDL_CHAN_NUM}" sound name "Ping"
+    display notification "$MESSAGE" with title "⚠️ AWDL Channel Mismatch" subtitle "WiFi: Ch ${WIFI_CHAN_NUM} | AWDL: Ch ${AWDL_CHAN_NUM}" sound name "Ping"
 end tell
 EOF
 
-    # Also show a more prominent dialog for critical alerts
     osascript <<EOF >/dev/null 2>&1 &
 tell application "System Events"
     activate
-    display dialog "⚠️ AWDL CHANNEL MISMATCH DETECTED\n\nYour WiFi and AWDL are on different channels, which causes lag spikes and stuttering in games/streaming.\n\nCurrent Status:\n• WiFi Channel: ${WIFI_CHAN_NUM} (${WIFI_BAND} GHz)\n• AWDL Channel: ${AWDL_CHAN_NUM}\n\nAction Required:\n$MESSAGE\n\nRouter Settings:\n1. Open your router admin page\n2. Navigate to WiFi settings\n3. Change ${WIFI_BAND} GHz channel to ${AWDL_CHAN_NUM}\n4. Save and reconnect" buttons {"Dismiss", "Open Router (192.168.1.1)"} default button "Open Router (192.168.1.1)" with title "AWDL Channel Monitor" with icon caution giving up after 60
-    
-    if button returned of result is "Open Router (192.168.1.1)" then
-        open location "http://192.168.1.1"
+    display dialog "⚠️ AWDL CHANNEL MISMATCH DETECTED\n\nYour WiFi and AWDL are on different channels, causing lag spikes.\n\nCurrent Status:\n• WiFi Channel: ${WIFI_CHAN_NUM} (${WIFI_BAND} GHz)\n• AWDL Channel: ${AWDL_CHAN_NUM}\n\nFix:\n$MESSAGE" buttons {"Dismiss", "Open Router"} default button "Open Router" with title "AWDL Channel Monitor" with icon caution giving up after 60
+
+    if button returned of result is "Open Router" then
+        open location "http://${ROUTER_IP}"
     end if
 end tell
 EOF
@@ -56,131 +56,134 @@ show_header() {
 }
 
 get_channel_info() {
-    # Get AWDL and WiFi info
     local WDUTIL_OUTPUT=$(sudo wdutil info 2>/dev/null)
-    
-    # Extract WiFi channel (format: 5g149/80 or 6g37/160)
-    WIFI_CHANNEL=$(echo "$WDUTIL_OUTPUT" | grep "^    Channel " | awk '{print $3}')
+
+    # WiFi channel is the one with format like "5g44/160"
+    WIFI_CHANNEL=$(echo "$WDUTIL_OUTPUT" | grep "Channel" | grep "[0-9]g[0-9]" | head -1 | awk '{print $NF}')
     WIFI_BAND=$(echo "$WIFI_CHANNEL" | sed -n 's/\([0-9]\)g.*/\1/p')
     WIFI_CHAN_NUM=$(echo "$WIFI_CHANNEL" | sed -n 's/.*g\([0-9]*\).*/\1/p')
     WIFI_WIDTH=$(echo "$WIFI_CHANNEL" | sed -n 's/.*\/\([0-9]*\)/\1/p')
-    
-    # Extract AWDL channel sequence
-    AWDL_SEQUENCE=$(echo "$WDUTIL_OUTPUT" | grep "^    Channel Sequence" | sed 's/.*: //')
-    AWDL_CHANNEL=$(echo "$AWDL_SEQUENCE" | awk '{print $1}' | sed 's/++//g')
-    AWDL_CHAN_NUM=$AWDL_CHANNEL
-    
-    # Determine if there are multiple channels in sequence
-    AWDL_UNIQUE_CHANNELS=$(echo "$AWDL_SEQUENCE" | tr ' ' '\n' | sed 's/++//g' | sort -u | tr '\n' ' ')
-    AWDL_CHANNEL_COUNT=$(echo "$AWDL_UNIQUE_CHANNELS" | wc -w | tr -d ' ')
-    
-    # Extract RSSI
-    WIFI_RSSI=$(echo "$WDUTIL_OUTPUT" | grep "^    RSSI " | awk '{print $3, $4}')
-    
-    # Extract SSID
-    WIFI_SSID=$(echo "$WDUTIL_OUTPUT" | grep "^    SSID " | sed 's/.*: //')
+
+    # AWDL fields — grep directly
+    AWDL_ENABLED=$(echo "$WDUTIL_OUTPUT" | grep "AWDL Enabled" | awk '{print $NF}')
+    AWDL_SEQUENCE=$(echo "$WDUTIL_OUTPUT" | grep "Channel Sequence" | sed 's/.*: //')
+
+    # Parse AWDL channels — filter out zeros and n/a
+    AWDL_CHAN_NUM=""
+    AWDL_UNIQUE_CHANNELS=""
+    AWDL_CHANNEL_COUNT=0
+
+    if [[ "$AWDL_ENABLED" == "Yes" && "$AWDL_SEQUENCE" != "n/a" && -n "$AWDL_SEQUENCE" ]]; then
+        AWDL_UNIQUE_CHANNELS=$(echo "$AWDL_SEQUENCE" | tr ' ' '\n' | sed 's/++//g' | grep -v '^0$' | sort -un | tr '\n' ' ' | sed 's/ *$//')
+        AWDL_CHANNEL_COUNT=$(echo "$AWDL_UNIQUE_CHANNELS" | wc -w | tr -d ' ')
+        # Primary = most frequent non-zero channel
+        AWDL_CHAN_NUM=$(echo "$AWDL_SEQUENCE" | tr ' ' '\n' | sed 's/++//g' | grep -v '^0$' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
+    fi
+
+    # Extract RSSI and SSID directly
+    WIFI_RSSI=$(echo "$WDUTIL_OUTPUT" | grep "RSSI" | head -1 | sed 's/.*: //')
+    WIFI_SSID=$(echo "$WDUTIL_OUTPUT" | grep "SSID" | head -1 | sed 's/.*: //')
 }
 
 display_status() {
     show_header
-    
+
     # Timestamp
     echo "${CYAN}Last Updated: $(date '+%Y-%m-%d %H:%M:%S')${NC}"
     echo
-    
+
     # WiFi Info
     echo "${GREEN}${BOLD}WiFi Interface (en0):${NC}"
-    echo "  ${BOLD}SSID:${NC}     ${WIFI_SSID}"
-    echo "  ${BOLD}Band:${NC}     ${WIFI_BAND}.4 GHz" # Showing as X.4 GHz (e.g., 5.4 GHz, 6.4 GHz)
-    echo "  ${BOLD}Channel:${NC}  ${WIFI_CHAN_NUM} (${WIFI_WIDTH} MHz width)"
-    echo "  ${BOLD}Signal:${NC}   ${WIFI_RSSI}"
-    echo "  ${BOLD}Full:${NC}     ${WIFI_CHANNEL}"
+    if [[ -n "$WIFI_CHAN_NUM" ]]; then
+        echo "  ${BOLD}SSID:${NC}     ${WIFI_SSID}"
+        echo "  ${BOLD}Band:${NC}     ${WIFI_BAND} GHz"
+        echo "  ${BOLD}Channel:${NC}  ${WIFI_CHAN_NUM} (${WIFI_WIDTH} MHz width)"
+        echo "  ${BOLD}Signal:${NC}   ${WIFI_RSSI}"
+        echo "  ${BOLD}Full:${NC}     ${WIFI_CHANNEL}"
+    else
+        echo "  ${YELLOW}Not connected${NC}"
+    fi
     echo
-    
+
     # AWDL Info
     echo "${GREEN}${BOLD}AWDL Interface (awdl0):${NC}"
-    if [[ $AWDL_CHANNEL_COUNT -eq 1 ]]; then
-        echo "  ${BOLD}Status:${NC}   ${GREEN}Synchronized (not hopping)${NC}"
+    if [[ "$AWDL_ENABLED" != "Yes" ]]; then
+        echo "  ${BOLD}Status:${NC}   ${YELLOW}Disabled${NC}"
+        echo "  Enable AirDrop/Handoff to activate AWDL"
+    elif [[ -z "$AWDL_CHAN_NUM" ]]; then
+        echo "  ${BOLD}Status:${NC}   ${YELLOW}Enabled but inactive (no channel)${NC}"
+    elif [[ $AWDL_CHANNEL_COUNT -eq 1 ]]; then
+        echo "  ${BOLD}Status:${NC}   ${GREEN}Synchronized (single channel)${NC}"
         echo "  ${BOLD}Channel:${NC}  ${AWDL_CHAN_NUM}"
     else
-        echo "  ${BOLD}Status:${NC}   ${YELLOW}Frequency Hopping${NC}"
+        echo "  ${BOLD}Status:${NC}   ${YELLOW}Multi-channel (hopping between ${AWDL_CHANNEL_COUNT} channels)${NC}"
         echo "  ${BOLD}Channels:${NC} ${AWDL_UNIQUE_CHANNELS}"
+        echo "  ${BOLD}Primary:${NC}  ${AWDL_CHAN_NUM}"
     fi
-    echo "  ${BOLD}Sequence:${NC} ${AWDL_SEQUENCE:0:80}..."
+    echo "  ${BOLD}Sequence:${NC} ${AWDL_SEQUENCE:0:60}..."
     echo
-    
+
     # Analysis
     echo "${BLUE}${BOLD}════════════════════════════════════════════════════════════════${NC}"
     echo "${BLUE}${BOLD}         Interference Analysis${NC}"
     echo "${BLUE}${BOLD}════════════════════════════════════════════════════════════════${NC}"
     echo
-    
-    if [[ "$WIFI_CHAN_NUM" == "$AWDL_CHAN_NUM" ]]; then
+
+    if [[ -z "$WIFI_CHAN_NUM" ]]; then
+        echo "${YELLOW}⚠ WiFi not connected — cannot analyze${NC}"
+        LAST_NOTIFIED_STATE=""
+    elif [[ "$AWDL_ENABLED" != "Yes" || -z "$AWDL_CHAN_NUM" ]]; then
+        echo "${GREEN}✓ AWDL inactive — no channel hopping interference${NC}"
+        echo "  AWDL will activate when AirDrop/Handoff/AirPlay is used"
+        LAST_NOTIFIED_STATE=""
+    elif [[ "$WIFI_CHAN_NUM" == "$AWDL_CHAN_NUM" ]]; then
         echo "${GREEN}${BOLD}✓ OPTIMAL CONFIGURATION${NC}"
-        echo "${GREEN}WiFi and AWDL are synchronized on channel ${WIFI_CHAN_NUM}${NC}"
-        echo "${GREEN}No stuttering or ping spikes expected.${NC}"
-        
-        # Reset notification state when channels match
+        echo "${GREEN}WiFi and AWDL synchronized on channel ${WIFI_CHAN_NUM}${NC}"
+        echo "${GREEN}No ping spikes expected from AWDL.${NC}"
         LAST_NOTIFIED_STATE=""
     else
-        echo "${RED}${BOLD}⚠ INTERFERENCE DETECTED${NC}"
-        echo "${RED}WiFi Channel: ${WIFI_CHAN_NUM} | AWDL Channel: ${AWDL_CHAN_NUM}${NC}"
-        echo "${YELLOW}This WILL cause ping spikes and stuttering!${NC}"
+        echo "${RED}${BOLD}⚠ CHANNEL MISMATCH${NC}"
+        echo "${RED}WiFi: channel ${WIFI_CHAN_NUM} | AWDL: channel ${AWDL_CHAN_NUM}${NC}"
+        echo "${YELLOW}This causes ping spikes during AWDL channel hops.${NC}"
         echo
-        echo "${YELLOW}${BOLD}ACTION REQUIRED:${NC}"
-        
-        # Determine recommendation message
-        local RECOMMENDATION=""
-        if [[ "$WIFI_BAND" == "5" ]]; then
-            echo "  → Change router to channel ${AWDL_CHAN_NUM} on 5GHz"
-            echo "  → Channel 149 is typically preferred by AWDL on 5GHz"
-            RECOMMENDATION="Change your router's 5 GHz WiFi channel to ${AWDL_CHAN_NUM} to match AWDL and prevent lag spikes."
-        elif [[ "$WIFI_BAND" == "6" ]]; then
-            echo "  → Change router to channel ${AWDL_CHAN_NUM} on 6GHz"
-            echo "  → 6GHz AWDL commonly uses: 5, 21, 37, 53, 69, 85, 101, etc."
-            RECOMMENDATION="Change your router's 6 GHz WiFi channel to ${AWDL_CHAN_NUM} to match AWDL and prevent lag spikes."
-        else
-            echo "  → Switch to 5GHz or 6GHz for better performance"
-            RECOMMENDATION="Switch to 5 GHz (channel 149) or 6 GHz for better performance."
-        fi
-        
+        echo "${YELLOW}${BOLD}FIX:${NC}"
+        echo "  → Change router's ${WIFI_BAND}GHz channel to ${AWDL_CHAN_NUM}"
+
+        local RECOMMENDATION="Change router's ${WIFI_BAND} GHz channel to ${AWDL_CHAN_NUM}"
+
         # Show notification popup if this is a new mismatch
         local CURRENT_STATE="${WIFI_CHAN_NUM}-${AWDL_CHAN_NUM}"
         if [[ "$LAST_NOTIFIED_STATE" != "$CURRENT_STATE" ]]; then
             show_notification "$RECOMMENDATION"
             LAST_NOTIFIED_STATE="$CURRENT_STATE"
         fi
-        
-        # Play system alert sound
-        afplay /System/Library/Sounds/Ping.aiff 2>/dev/null &
     fi
     echo
-    
-    # Band-specific recommendations
+
+    # Recommendations
     echo "${BLUE}${BOLD}════════════════════════════════════════════════════════════════${NC}"
-    echo "${BLUE}${BOLD}         Recommendations${NC}"
+    echo "${BLUE}${BOLD}         Tips${NC}"
     echo "${BLUE}${BOLD}════════════════════════════════════════════════════════════════${NC}"
     echo
-    
+
     case "$WIFI_BAND" in
         2)
-            echo "${RED}⚠ 2.4 GHz - NOT RECOMMENDED${NC}"
-            echo "  • High interference from neighbors and devices"
-            echo "  • AWDL operates on 5/6 GHz causing channel mismatch"
-            echo "  • Switch to 5 GHz channel 149 or 6 GHz"
+            echo "${RED}⚠ 2.4 GHz — high interference, consider 5 or 6 GHz${NC}"
             ;;
         5)
-            echo "${GREEN}✓ 5 GHz - GOOD CHOICE${NC}"
-            echo "  • Best channel: 149 (AWDL's preferred channel)"
-            echo "  • Alternative: Match AWDL's current channel (${AWDL_CHAN_NUM})"
-            echo "  • Avoid: 36-48 (DFS channels cause switching)"
+            echo "${GREEN}✓ 5 GHz${NC}"
+            echo "  AWDL social channels: 44 or 149 (varies by region)"
+            if [[ -n "$AWDL_CHAN_NUM" ]]; then
+                echo "  Your AWDL prefers: ${AWDL_CHAN_NUM} — set router to this"
+            else
+                echo "  Activate AWDL to detect preferred channel"
+            fi
             ;;
         6)
-            echo "${GREEN}✓ 6 GHz - EXCELLENT CHOICE${NC}"
-            echo "  • Current AWDL channel: ${AWDL_CHAN_NUM}"
-            echo "  • Match your router to this channel"
-            echo "  • 6 GHz has minimal interference"
-            echo "  • AWDL on 6 GHz may use: 5, 21, 37, 53, 69, 85, 101, etc."
+            echo "${GREEN}✓ 6 GHz — minimal congestion${NC}"
+            if [[ -n "$AWDL_CHAN_NUM" ]]; then
+                echo "  Your AWDL uses: ${AWDL_CHAN_NUM} — match router to this"
+            fi
             ;;
     esac
     echo

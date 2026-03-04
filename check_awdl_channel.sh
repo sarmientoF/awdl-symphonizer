@@ -19,56 +19,56 @@ echo
 # Get AWDL and WiFi info
 WDUTIL_OUTPUT=$(sudo wdutil info 2>/dev/null)
 
-# Extract WiFi channel (format: 5g149/80 or 6g37/160)
-WIFI_CHANNEL=$(echo "$WDUTIL_OUTPUT" | grep "^    Channel " | awk '{print $3}')
-# Extract band (the number before 'g')
+if [[ -z "$WDUTIL_OUTPUT" ]]; then
+    echo "${RED}Error: Failed to run 'sudo wdutil info'. Are you running with sudo?${NC}"
+    exit 1
+fi
+
+# Use grep to extract specific fields directly from wdutil output
+# WiFi channel is the one with format like "5g44/160"
+WIFI_CHANNEL=$(echo "$WDUTIL_OUTPUT" | grep "Channel" | grep "[0-9]g[0-9]" | head -1 | awk '{print $NF}')
 WIFI_BAND=$(echo "$WIFI_CHANNEL" | sed -n 's/\([0-9]\)g.*/\1/p')
-# Extract channel number (between 'g' and '/')
 WIFI_CHAN_NUM=$(echo "$WIFI_CHANNEL" | sed -n 's/.*g\([0-9]*\).*/\1/p')
 
-# Extract AWDL channel sequence
-AWDL_SEQUENCE=$(echo "$WDUTIL_OUTPUT" | grep "^    Channel Sequence" | sed 's/.*: //')
-# Get the most common channel from sequence (first one usually)
-AWDL_CHANNEL=$(echo "$AWDL_SEQUENCE" | awk '{print $1}' | sed 's/++//g')
+# AWDL fields — grep directly
+AWDL_ENABLED=$(echo "$WDUTIL_OUTPUT" | grep "AWDL Enabled" | awk '{print $NF}')
+AWDL_SEQUENCE=$(echo "$WDUTIL_OUTPUT" | grep "Channel Sequence" | sed 's/.*: //')
+AWDL_SCHEDULE=$(echo "$WDUTIL_OUTPUT" | grep "Schedule State" | sed 's/.*: //')
 
-# Determine band from channel number
-determine_band() {
-    local chan=$1
-    if [[ $chan -le 14 ]]; then
-        echo "2"
-    elif [[ $chan -ge 36 && $chan -le 165 ]]; then
-        echo "5"
-    elif [[ $chan -ge 1 && $chan -le 233 ]]; then
-        # Could be 6GHz if context suggests it
-        # Check if it's in the format like "6g149"
-        echo "6"
-    else
-        echo "unknown"
-    fi
-}
-
-# If AWDL channel doesn't have band prefix, try to determine it
-if [[ ! "$AWDL_CHANNEL" =~ ^[0-9]+$ ]]; then
-    AWDL_BAND=$(echo "$AWDL_CHANNEL" | sed 's/[0-9]//g')
-    AWDL_CHAN_NUM=$(echo "$AWDL_CHANNEL" | sed 's/[^0-9]//g')
-else
-    AWDL_CHAN_NUM=$AWDL_CHANNEL
-    AWDL_BAND=$(determine_band $AWDL_CHAN_NUM)
+# Parse AWDL channels — filter out zeros and n/a
+AWDL_CHAN_NUM=""
+if [[ "$AWDL_ENABLED" == "Yes" && "$AWDL_SEQUENCE" != "n/a" && -n "$AWDL_SEQUENCE" ]]; then
+    # Get unique non-zero channels from sequence (e.g., "44++ 44++ 6 44++" → "44 6")
+    AWDL_CHANNELS=$(echo "$AWDL_SEQUENCE" | tr ' ' '\n' | sed 's/++//g' | grep -v '^0$' | sort -un | tr '\n' ' ' | sed 's/ *$//')
+    # Primary channel = most frequent non-zero channel
+    AWDL_CHAN_NUM=$(echo "$AWDL_SEQUENCE" | tr ' ' '\n' | sed 's/++//g' | grep -v '^0$' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
 fi
 
 # Display WiFi Info
 echo "${GREEN}WiFi Interface (en0):${NC}"
-echo "  Band: ${WIFI_BAND}GHz"
-echo "  Channel: ${WIFI_CHAN_NUM}"
-echo "  Full: ${WIFI_CHANNEL}"
+if [[ -n "$WIFI_CHAN_NUM" ]]; then
+    echo "  Band: ${WIFI_BAND} GHz"
+    echo "  Channel: ${WIFI_CHAN_NUM}"
+    echo "  Full: ${WIFI_CHANNEL}"
+else
+    echo "  ${YELLOW}Not connected${NC}"
+fi
 echo
 
 # Display AWDL Info
 echo "${GREEN}AWDL Interface (awdl0):${NC}"
-echo "  Channel Sequence: ${AWDL_SEQUENCE}"
-echo "  Primary Channel: ${AWDL_CHANNEL}"
-if [[ -n "$AWDL_BAND" ]]; then
-    echo "  Detected Band: ${AWDL_BAND}GHz"
+if [[ "$AWDL_ENABLED" != "Yes" ]]; then
+    echo "  ${YELLOW}AWDL is disabled${NC}"
+    echo "  Enable AirDrop/Handoff to activate AWDL"
+elif [[ -z "$AWDL_CHAN_NUM" ]]; then
+    echo "  ${YELLOW}AWDL is enabled but not active (no channel assigned)${NC}"
+    echo "  Schedule State: ${AWDL_SCHEDULE}"
+else
+    echo "  Channel Sequence: ${AWDL_SEQUENCE}"
+    echo "  Primary Channel: ${AWDL_CHAN_NUM}"
+    if [[ -n "$AWDL_CHANNELS" ]]; then
+        echo "  All Channels: ${AWDL_CHANNELS}"
+    fi
 fi
 echo
 
@@ -78,35 +78,34 @@ echo "${BLUE}         Analysis${NC}"
 echo "${BLUE}════════════════════════════════════════════════════════════════${NC}"
 echo
 
-if [[ "$WIFI_CHAN_NUM" == "$AWDL_CHAN_NUM" ]]; then
+if [[ -z "$WIFI_CHAN_NUM" ]]; then
+    echo "${YELLOW}⚠ WiFi not connected — cannot analyze${NC}"
+elif [[ "$AWDL_ENABLED" != "Yes" || -z "$AWDL_CHAN_NUM" ]]; then
+    echo "${GREEN}✓ AWDL is inactive — no channel hopping interference${NC}"
+    echo "  Note: AWDL will activate when AirDrop/Handoff/AirPlay is used"
+elif [[ "$WIFI_CHAN_NUM" == "$AWDL_CHAN_NUM" ]]; then
     echo "${GREEN}✓ OPTIMAL: WiFi and AWDL are on the SAME channel (${WIFI_CHAN_NUM})${NC}"
-    echo "${GREEN}  This minimizes interference and prevents stuttering.${NC}"
+    echo "${GREEN}  No channel hopping needed — minimal interference.${NC}"
 else
     echo "${RED}⚠ WARNING: WiFi and AWDL are on DIFFERENT channels!${NC}"
     echo "${RED}  WiFi: ${WIFI_CHAN_NUM} | AWDL: ${AWDL_CHAN_NUM}${NC}"
-    echo "${YELLOW}  This may cause ping spikes and stuttering.${NC}"
+    echo "${YELLOW}  This causes ping spikes during AWDL channel hops.${NC}"
     echo
     echo "${YELLOW}Recommendation:${NC}"
-    if [[ "$WIFI_BAND" == "5" ]]; then
-        echo "  Change your router to channel ${AWDL_CHAN_NUM} (5GHz)"
-    elif [[ "$WIFI_BAND" == "6" ]]; then
-        echo "  For 6GHz, AWDL typically uses channels in the lower range"
-        echo "  Consider using channel ${AWDL_CHAN_NUM} on your router"
-    else
-        echo "  For 2.4GHz, consider switching to 5GHz or 6GHz for better performance"
-    fi
+    echo "  Change your router's 5GHz channel to ${AWDL_CHAN_NUM}"
 fi
 echo
 
 # Additional recommendations
 echo "${BLUE}════════════════════════════════════════════════════════════════${NC}"
-echo "${BLUE}         Recommendations by Band${NC}"
+echo "${BLUE}         Tips${NC}"
 echo "${BLUE}════════════════════════════════════════════════════════════════${NC}"
 echo
-echo "${GREEN}2.4 GHz:${NC} Not recommended for gaming (high interference)"
-echo "${GREEN}5 GHz:${NC}   Use channel 149 (AWDL's preferred channel)"
-echo "${GREEN}6 GHz:${NC}   AWDL can use various channels - match your router to AWDL"
+echo "${GREEN}Goal:${NC} Match your router channel to AWDL's preferred channel"
+echo "  AWDL social channels: 6 (2.4GHz), 44 or 149 (5GHz)"
+echo "  The preferred channel varies by region and device"
+echo "  Run this tool with AWDL active to see which one your Mac uses"
 echo
-echo "${YELLOW}Note:${NC} If AWDL shows '149++', it's hopping but staying on channel 149"
-echo "      The '++' indicates extended availability windows on that channel"
+echo "${YELLOW}Note:${NC} '++' in channel sequence means extended availability windows"
+echo "      '0' entries are idle slots (no hopping occurs)"
 echo
