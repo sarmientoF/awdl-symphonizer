@@ -55,15 +55,42 @@ if [[ ! -d "$LAUNCH_AGENTS_DIR" ]]; then
     echo
 fi
 
-# Verify the plist file exists
-if [[ ! -f "$PLIST_SOURCE" ]]; then
-    echo "${RED}✗ Error: $PLIST_NAME not found in $SCRIPT_DIR${NC}"
-    exit 1
-fi
-
-# Copy plist to LaunchAgents
+# Generate plist with correct paths
 echo "${BLUE}Installing service...${NC}"
-cp "$PLIST_SOURCE" "$PLIST_DEST"
+cat > "$PLIST_DEST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nologik.awdl-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${SCRIPT_DIR}/monitor_awdl_live.sh</string>
+        <string>30</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${SCRIPT_DIR}/monitor.log</string>
+    <key>StandardErrorPath</key>
+    <string>${SCRIPT_DIR}/monitor.error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>Nice</key>
+    <integer>1</integer>
+</dict>
+</plist>
+PLIST
 
 if [[ $? -eq 0 ]]; then
     echo "${GREEN}✓ Service file installed to $PLIST_DEST${NC}"
@@ -107,13 +134,13 @@ echo "  • Errors: ${BLUE}$SCRIPT_DIR/monitor.error.log${NC}"
 echo
 echo "${BOLD}Useful Commands:${NC}"
 echo "  • Check status:     ${BLUE}launchctl list | grep awdl-monitor${NC}"
-echo "  • View logs:        ${BLUE}tail -f ~/awdl-mac-monitor/monitor.log${NC}"
+echo "  • View logs:        ${BLUE}tail -f $SCRIPT_DIR/monitor.log${NC}"
 echo "  • Stop service:     ${BLUE}launchctl unload $PLIST_DEST${NC}"
 echo "  • Start service:    ${BLUE}launchctl load $PLIST_DEST${NC}"
-echo "  • Uninstall:        ${BLUE}~/awdl-mac-monitor/uninstall.sh${NC}"
+echo "  • Uninstall:        ${BLUE}$SCRIPT_DIR/uninstall.sh${NC}"
 echo
 echo "${BOLD}Manual Check:${NC}"
-echo "  • Quick check:      ${BLUE}~/awdl-mac-monitor/check_awdl_channel.sh${NC}"
+echo "  • Quick check:      ${BLUE}$SCRIPT_DIR/check_awdl_channel.sh${NC}"
 echo
 echo "${YELLOW}Note: The monitor checks every 30 seconds. If your channels are${NC}"
 echo "${YELLOW}mismatched, you should see a popup alert within 30 seconds.${NC}"
